@@ -1,0 +1,56 @@
+name: Build web-ui Sunshine npm offline cache
+
+on:
+  schedule:
+    # build every week
+    - cron: "0 0 */7 * *"
+  workflow_dispatch:
+
+jobs:
+  build-npm-cache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get latest Sunshine release
+        id: get_release
+        run: |
+          latest=$(curl -s https://api.github.com/repos/LizardByte/Sunshine/releases/latest | jq -r .tag_name)
+          echo "latest_tag=$latest" >> $GITHUB_OUTPUT
+
+      - name: Fetch Sunshine package.json
+        run: |
+          tag=${{ steps.get_release.outputs.latest_tag }}
+          curl -L -o package.json \
+            "https://raw.githubusercontent.com/LizardByte/Sunshine/${tag}/package.json"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate package-lock.json
+        run: npm install --package-lock-only
+
+      - name: Populate offline npm cache
+        run: npm install --ignore-scripts --cache ./offline-cache --prefer-offline
+
+      - name: Pack offline cache
+        run: |
+          mkdir -p release
+          tar czf release/npm-offline-cache.tar.gz offline-cache
+
+      - name: Delete old release if exists
+        run: |
+          tag=${{ steps.get_release.outputs.latest_tag }}
+          gh release delete "$tag" -y || true
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+
+      - name: Create GitHub release with cache
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_release.outputs.latest_tag }}
+          name: "Sunshine Web-UI NPM Offline Cache ${{ steps.get_release.outputs.latest_tag }}"
+          files: release/npm-offline-cache.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
