@@ -28,21 +28,28 @@ jobs:
         with:
           node-version: 20
 
+      # 1. Generate lockfile
       - name: Generate package-lock.json
         run: npm install --package-lock-only
 
+      # 2. Populate cache with all deps
       - name: Populate offline npm cache
-        run: npm install --ignore-scripts --cache ./offline-cache --prefer-offline
+        run: |
+          npm ci --ignore-scripts --cache ./offline-cache
+          npm cache verify
 
+      # 3. Package both cache + lockfile for Guix
       - name: Pack offline cache
         run: |
           mkdir -p release
-          tar czf release/npm-offline-cache.tar.gz offline-cache
+          tar czf release/npm-offline-cache.tar.gz offline-cache package-lock.json
 
+      # Delete old and create new release as before
       - name: Delete old release if exists
         run: |
           tag=${{ steps.get_release.outputs.latest_tag }}
           gh release delete "$tag" -y || true
+          git push --delete origin "$tag" || true
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
