@@ -21,45 +21,51 @@ jobs:
         id: check_existing
         run: |
           tag=${{ steps.get_release.outputs.latest_tag }}
-          exists=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/tags/${tag} | jq -r .id)
-          if [ "$exists" != "null" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+          release_id=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/tags/${tag} | jq -r .id)
+          if [ "$release_id" != "null" ]; then
+            echo "already_released=true" >> $GITHUB_OUTPUT
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "already_released=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Stop if release already exists
-        if: steps.check_existing.outputs.exists == 'true'
-        run: echo "Release for this version already exists, skipping build." && exit 0
+      - name: Print skip message
+        if: steps.check_existing.outputs.already_released == 'true'
+        run: echo "Release for this version already exists. Skipping build."
 
       - name: Fetch Sunshine package.json
+        if: steps.check_existing.outputs.already_released == 'false'
         run: |
           tag=${{ steps.get_release.outputs.latest_tag }}
           curl -L -o package.json \
             "https://raw.githubusercontent.com/LizardByte/Sunshine/${tag}/package.json"
 
       - name: Setup Node.js
+        if: steps.check_existing.outputs.already_released == 'false'
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       # 1. Generate lockfile
       - name: Generate package-lock.json
+        if: steps.check_existing.outputs.already_released == 'false'
         run: npm install --package-lock-only
 
       # 2. Populate cache with all deps
       - name: Populate offline npm cache
+        if: steps.check_existing.outputs.already_released == 'false'
         run: |
           npm ci --ignore-scripts --cache ./offline-cache
           npm cache verify
 
       # 3. Package both cache + lockfile for Guix
       - name: Pack offline cache
+        if: steps.check_existing.outputs.already_released == 'false'
         run: |
           mkdir -p release
           tar czf release/npm-offline-cache.tar.gz offline-cache package-lock.json
 
       - name: Create GitHub release with cache
+        if: steps.check_existing.outputs.already_released == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_release.outputs.latest_tag }}
