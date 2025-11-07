@@ -17,6 +17,21 @@ jobs:
           latest=$(curl -s https://api.github.com/repos/LizardByte/Sunshine/releases/latest | jq -r .tag_name)
           echo "latest_tag=$latest" >> $GITHUB_OUTPUT
 
+      - name: Check if cache release already exists
+        id: check_existing
+        run: |
+          tag=${{ steps.get_release.outputs.latest_tag }}
+          exists=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/tags/${tag} | jq -r .id)
+          if [ "$exists" != "null" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if release already exists
+        if: steps.check_existing.outputs.exists == 'true'
+        run: echo "Release for this version already exists, skipping build." && exit 0
+
       - name: Fetch Sunshine package.json
         run: |
           tag=${{ steps.get_release.outputs.latest_tag }}
@@ -43,15 +58,6 @@ jobs:
         run: |
           mkdir -p release
           tar czf release/npm-offline-cache.tar.gz offline-cache package-lock.json
-
-      # Delete old and create new release as before
-      - name: Delete old release if exists
-        run: |
-          tag=${{ steps.get_release.outputs.latest_tag }}
-          gh release delete "$tag" -y || true
-          git push --delete origin "$tag" || true
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Create GitHub release with cache
         uses: softprops/action-gh-release@v2
